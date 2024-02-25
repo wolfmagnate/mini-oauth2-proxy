@@ -1,0 +1,1 @@
+package minioauth2proxy

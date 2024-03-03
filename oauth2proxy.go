@@ -1,15 +1,60 @@
-package minioauth2proxy
+package main
 
-// 最上位モジュール
+import (
+	"fmt"
+	"net/http"
 
-// 起動時に行う処理
-// 設定を読み込み、いろいろ初期化する
+	"github.com/go-chi/chi/v5"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/config"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/headerInjection"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/health"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/log"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/login"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/oidc"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/proxyURL"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/ready"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/redirect"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/requestid"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/session"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/sessionid"
+	"github.com/wolfmagnate/mini-oauth2-proxy/pkg/upstream"
+)
 
-// リクエスト時に行う処理
-// health/readinessチェックかどうかを判定して適当に答えを返す。
-// セッションIDが無いならば作成してCookieに設定する
-// リクエストIDを生成して、スコープ単位で必要なデータをまとめ、ロガーを初期化する
-// a.リクエストがOIDCならばそちらに投げる。ログイン成功時にはCookieのセッションIDを書き換える
-// b.リクエストが通常ならばセッションIDからセッションを読み込む。
-// その後、必要ならOIDCのエンドポイントに投げる
-// その後、ヘッダの書き換えを行い、upstreamに投げる
+func main() {
+	StartOAuth2Proxy()
+}
+
+func StartOAuth2Proxy() {
+	c := config.LoadConfig(&ConfigSchema{}).(Config)
+	headerInjectMiddleware := headerInjection.CreateMiddleware(c.HeaderInjection)
+	proxyURL.Init(c.ProxyURL)
+	session.Init()
+	log.Init(c.Log)
+
+	r := chi.NewRouter()
+	r.Use(log.CreateLoggerMiddleware)
+	r.Use(requestid.AddIDMiddleware)
+	r.Use(sessionid.LoadMiddleware)
+	r.Use(login.GetLoginStatusMiddleware)
+	r.Use(redirect.GetMiddleware)
+	health.AddEndpoint(r)
+	ready.AddEndpoint(r)
+	oidcRouter := oidc.NewRouter(c.OIDC)
+	r.Mount(oidc.Path, oidcRouter)
+
+	upstreamRouter := upstream.NewRouter(c.Upstream)
+	loginHandler := oidc.NewLoginHandler(c.OIDC)
+
+	r.HandleFunc("/*", func(w http.ResponseWriter, r *http.Request) {
+		isLogin := r.Context().Value(login.Key{}).(bool)
+		if isLogin {
+			headerInjectMiddleware(upstreamRouter).ServeHTTP(w, r)
+		} else {
+			redirect.FindMiddleware(loginHandler).ServeHTTP(w, r)
+		}
+	})
+
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", c.Port), r); err != nil {
+		panic(err.Error())
+	}
+}

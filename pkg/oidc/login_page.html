@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Page</title>
+</head>
+<body>
+    <h1>Login with:</h1>
+    {{range .Providers}}
+    <form action="{{.LoginURL}}" method="get">
+        <input type="hidden" name="redirect" value="{{.RedirectURL}}">
+        <button type="submit">Login with {{.ID}}</button>
+    </form>
+    {{end}}
+</body>
+</html>

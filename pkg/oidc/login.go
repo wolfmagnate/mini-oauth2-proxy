@@ -23,8 +23,8 @@ type templateData struct {
 	}
 }
 
-func NewLoginHandler(config Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func NewLoginHandler(config Config) http.Handler {
+	return noCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := r.Context().Value(log.Key{}).(*zerolog.Logger)
 		upstreamRedirectURL := r.Context().Value(redirect.Key{}).(string)
 
@@ -59,7 +59,7 @@ func NewLoginHandler(config Config) http.HandlerFunc {
 		}
 
 		logger.Info().Msg("Login page rendered successfully")
-	}
+	}))
 }
 
 func getTemplateData(providers []Provider, upstreamRedirectURL string) templateData {

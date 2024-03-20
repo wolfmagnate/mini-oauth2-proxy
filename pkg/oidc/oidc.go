@@ -21,6 +21,7 @@ const Path string = "/oauth2"
 
 func NewRouter(config Config) *chi.Mux {
 	r := chi.NewRouter()
+	r.Use(noCacheMiddleware)
 	for _, provider := range config.providers {
 		r.Handle(provider.StartPath, createOIDCStartHandler(provider))
 		r.Handle(getCallbackPath(provider), createOIDCCallbackHandler(provider))
